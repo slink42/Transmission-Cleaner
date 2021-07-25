@@ -1,5 +1,13 @@
+
+import argparse
+import sys
+
+from typing import Sequence
+
+from pydantic.error_wrappers import ValidationError
+from requests.exceptions import ConnectionError
+
 from clutch import Client
-from pydantic import BaseModel
 from clutch.schema.request.torrent.accessor import TorrentAccessorArgumentsRequest
 from clutch.schema.request.torrent.add import TorrentAddArgumentsRequest
 from clutch.schema.request.torrent.mutator import TorrentMutatorArgumentsRequest
@@ -75,18 +83,33 @@ def re_add_torrent(client, torrent, test=True):
         return(1)
     return(0)
 
-def get_torrents(client, field_set = 'full', ids: IdsArg = None):
-    if field_set == 'full':
-        response = client.torrent.accessor(all_fields=True, ids = ids )
+def get_torrents(client, fields = None, ids: IdsArg = None):
+    if fields == None:
+        all_fields=True
     else:
-        response:  Response[TorrentAccessorResponse] = client.torrent.accessor(fields)
-    if response.result != 'success':
-        print("failed to connect to ", address, ". response: ", response)
-        torrents: Sequence[TorrentAccessorObject] = None
-    else:
-        print("Successfully loaded torrent list from", address)
-        torrents: Sequence[TorrentAccessorObject] = response.arguments.torrents
-    return torrents
+        all_fields=False
+    
+    torrents: Sequence[TorrentAccessorObject] = []
+    try:
+        print("Loaded torrent list from transmission")
+        response = client.torrent.accessor(fields = fields, all_fields=all_fields, ids = ids )
+        if response.result != 'success':
+            print("Transmission failed return a list of torrents. Transmission response: ", response)
+        else:
+            try:
+                torrents: Sequence[TorrentAccessorObject] = response.arguments.torrents
+                print("Successfully loaded torrent list from transmission. Torrents loaded:", len(torrents))
+            except:
+                print("Failed to parse transmission response to torrents list.")
+    except ConnectionRefusedError as error:
+        print("Transmission connection failure. Connection Refused.", error.json())
+    except ValidationError as error:
+        print("Transmission connection failure. Connection Response Invalid.", error.json())
+    except ConnectionError as error:
+        print("Transmission connection failure. Connection Failed.",  error)
+    except:
+        print("Transmission connection failure. Unexpected error:", sys.exc_info()[0])
+    return torrents  
 
 def filter_torrents(torrents, value, attribue = 'name', match_type = 'equals'):
     if match_type == 'equals':
@@ -186,8 +209,8 @@ def main(address="http://localhost:9091/transmission/rpc",
         query=None,
         username=None,
         password=None,
-        debug=False, 
-        test = True):
+        debug=False,
+        test=True):
 
     client = Client(address=address,
         scheme=scheme,
@@ -199,11 +222,31 @@ def main(address="http://localhost:9091/transmission/rpc",
         password=password,
         debug=debug)
 
-    torrents = get_torrents(client, field_set = 'full')
-    
-    clean_torrents_with_temp_errors(client, torrents, test=test, force= False)
-    clean_torrents_missing_data(client, torrents, test=test)
-    clean_torrents_unregistered(client, torrents, test=test)
+    torrents = get_torrents(client)
+    if len(torrents) > 0:
+        clean_torrents_with_temp_errors(client, torrents, test=test, force= False)
+        clean_torrents_missing_data(client, torrents, test=test)
+        clean_torrents_unregistered(client, torrents, test=test)
 
-    if torrents != None:
-        clean_torrents(client = client, torrents = torrents, test = test)
+   
+parser = argparse.ArgumentParser(description='Transmission Cleaner - Automaticly remedy those torrent errors!')
+
+parser.add_argument("--address", default="http://localhost:9091/transmission/rpc", type=str, help="Full URL path to transmission. eg. http://localhost:9091/transmission/rpc")
+parser.add_argument("--scheme", default=None, type=str, help="Transmission connection schema. eg. http")
+parser.add_argument("--host", default=None, type=str, help="Transmission connection host. eg. localhost")
+parser.add_argument("--port", default=None, type=str, help="Transmission connection port. eg. 9091")
+parser.add_argument("--path", default=None, type=str, help="Transmission connection host. eg. /transmission/rpc")
+parser.add_argument("--query", default=None, type=str, help="Transmission connection query.")
+parser.add_argument("--username", default=None, type=str, help="Transmission connection username.")
+parser.add_argument("--password", default=None, type=str, help="Transmission connection password.")
+parser.add_argument("--debug", default=False, type=bool, help="Transmission connection debug flag.")
+parser.add_argument("--test", default=True, type=bool, help="Run cleaner in test mode. Print actions console instead of doing them.")
+
+#group = parser.add_mutually_exclusive_group(required=True)
+#group.add_argument('--address', action='store_true', help="This is the 'address' variable")
+#group.add_argument('--scheme', action='store_true', help="This is the 'scheme' variable")
+
+args = parser.parse_args()
+
+main(address=args.address, scheme=args.scheme, host=args.host, port=args.port, path=args.path, \
+    query=args.query, username=args.username, password=args.password, debug=args.debug, test = args.test)

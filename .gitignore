@@ -112,6 +112,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-.vs/slnx.sqlite
-.vs/Transmission-Cleaner/v16/.suo
-.vs/VSWorkspaceState.json
+
+# vs code files
+.vs/
+.vscode/
