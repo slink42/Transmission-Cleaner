@@ -26,9 +26,12 @@ def print_torrent_info(torrent, full = False):
     print("Name: ", torrent.id, "-", torrent.name)
     print("Status: ", torrent.error, " ", torrent.error_string)
 
-def print_torrent_message(message, torrent, include_torrent_error = True):
+def print_torrent_message(message, torrent, include_torrent_error = True, include_magnet_link = False):
     if include_torrent_error:
-        print(message,torrent.error_string, torrent.id, torrent.name)
+        if include_magnet_link:
+            print(message,torrent.error_string, torrent.id, torrent.name, torrent.magnet_link)
+        else:
+            print(message,torrent.error_string, torrent.id, torrent.name)
     else:
         print(message,torrent.id, torrent.name)
 
@@ -37,7 +40,7 @@ def remove_torrent(client, torrent, delete_local_data=True, test=True):
     if test:
         print_torrent_message("Remove disabled. Skipping ",torrent, include_torrent_error = True)
     else:
-        print_torrent_message("Removing ",torrent, include_torrent_error = True)
+        print_torrent_message("Removing ",torrent, include_torrent_error = True, include_magnet_link = True)
         remove_response = client.torrent.remove(torrent.id, delete_local_data=delete_local_data)
         print(remove_response)
         if remove_response.result == 'success':
@@ -68,14 +71,14 @@ def re_add_torrent(client, torrent, test=True):
         remove_response = None
     else:
         print_torrent_message("Removing ",torrent, include_torrent_error = True)
-        remove_response = client.torrent.remove(ids = torrent.id, delete_local_data = False)
+        remove_response = client.torrent.remove(ids = torrent.id, delete_local_data = False, include_magnet_link = True)
         print(remove_response)
     
     add_torrent_arguments: TorrentAddArguments = {
         "filename": torrent.magnet_link,
         "paused": True,
     }
-    print_torrent_message("Adding ",torrent, include_torrent_error = False)
+    print_torrent_message("Adding ",torrent, include_torrent_error = False, include_magnet_link = True)
     add_response = client.torrent.add(add_torrent_arguments)
     print(add_response)
         
