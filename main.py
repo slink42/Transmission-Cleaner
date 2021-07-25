@@ -237,6 +237,9 @@ def main(address="http://localhost:9091/transmission/rpc",
         debug=False,
         test=True):
 
+    if test:
+        print("running in test mode!")
+
     client = Client(address=address,
         scheme=scheme,
         host=host,
@@ -266,14 +269,15 @@ parser.add_argument("--path", default=None, type=str, help="Transmission connect
 parser.add_argument("--query", default=None, type=str, help="Transmission connection query.")
 parser.add_argument("--username", default=None, type=str, help="Transmission connection username.")
 parser.add_argument("--password", default=None, type=str, help="Transmission connection password.")
-parser.add_argument("--debug", default=False, type=bool, help="Transmission connection debug flag.")
-parser.add_argument("--test", default=True, type=bool, help="Run cleaner in test mode. Print actions console instead of doing them.")
+parser.add_argument("--debug", default=False, help="Transmission connection debug flag.", action='store_true')
+parser.add_argument("--test", default=False, help="Run cleaner in test mode. Print actions console instead of doing them.", action='store_true')
 
 #group = parser.add_mutually_exclusive_group(required=True)
 #group.add_argument('--address', action='store_true', help="This is the 'address' variable")
 #group.add_argument('--scheme', action='store_true', help="This is the 'scheme' variable")
 
 args = parser.parse_args()
-
+print(args)
+print(args.test)
 main(address=args.address, scheme=args.scheme, host=args.host, port=args.port, path=args.path, \
     query=args.query, username=args.username, password=args.password, debug=args.debug, test = args.test)
