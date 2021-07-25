@@ -91,7 +91,7 @@ def get_torrents(client, fields = None, ids: IdsArg = None):
     
     torrents: Sequence[TorrentAccessorObject] = []
     try:
-        print("Loaded torrent list from transmission")
+        print("Loading torrent list from transmission")
         response = client.torrent.accessor(fields = fields, all_fields=all_fields, ids = ids )
         if response.result != 'success':
             print("Transmission failed return a list of torrents. Transmission response: ", response)
@@ -154,19 +154,38 @@ def clean_torrents(client,torrents: [TorrentAccessorObject], clean_function, tes
 
 def clean_torrents_missing_data(client,torrents: [TorrentAccessorObject], test=True):
     torrents_for_cleaning = torrents_missing_data(torrents)
-    print('Cleaning torrents with missing data. Clean action: remove and re-add')
-    ids = clean_torrents(client = client, torrents = torrents_for_cleaning, clean_function = re_add_torrent, test = test)
-    torrents_post_clean = get_torrents(client)
-    compare_torrent_list(torrents_for_cleaning, torrents_post_clean, attribue = 'name',match_type = 'equals')
+    if len(torrents_for_cleaning) == 0:
+        print('No torrents missing data to clean')
+        return 0
+    else:
+        print('Cleaning torrents with missing data. Clean action: remove and re-add')
+        ids = clean_torrents(client = client, torrents = torrents_for_cleaning, clean_function = re_add_torrent, test = test)
+        torrents_post_clean = get_torrents(client)
+        compare_torrent_list(torrents_for_cleaning, torrents_post_clean, attribue = 'name',match_type = 'equals')
+        return len(ids)
+        
 
 def clean_torrents_unregistered(client,torrents: [TorrentAccessorObject], test=True):
-    print('Cleaning torrents that are unregistered. Clean action: remove')
-    ids = clean_torrents(client = client, torrents = torrents_unregistered(torrents), clean_function = remove_torrent, test = test)
+    torrents_for_cleaning = torrents_unregistered(torrents)
+    if len(torrents_for_cleaning) == 0:
+        print('No unregistered torrents to clean')
+        return 0
+    else:
+        print('Cleaning torrents',len(torrents_for_cleaning),'that are unregistered. Clean action: remove')
+        ids = clean_torrents(client = client, torrents = torrents_for_cleaning, clean_function = remove_torrent, test = test)
+        cleaned = len(ids)
+        return len(ids)
+        
 
 def clean_torrents_with_temp_errors(client,torrents: [TorrentAccessorObject], test=True, retries = 2, force = False):
     attempt = 0
     max_attempts = retries + 1
     torrents_for_cleaning = torrents_with_temp_errors(torrents)
+    starting_torrents_for_cleaning = torrents_for_cleaning
+
+    if len(torrents_for_cleaning) == 0:
+        print('No torrents temp errors to force start')
+
     while len(torrents_for_cleaning) > 0 and attempt < max_attempts:
         torrents_for_cleaning_count = len(torrents_for_cleaning)
         attempt = attempt + 1
@@ -179,6 +198,8 @@ def clean_torrents_with_temp_errors(client,torrents: [TorrentAccessorObject], te
     if force and len(torrents_for_cleaning) > 0:
         print('Re-cleaning torrents with temp errors. Clean action: remove and re-add')
         ids = clean_torrents(client = client, torrents = torrents_with_temp_errors(torrents_for_cleaning), clean_function = re_add_torrent, test = test)
+        return len(starting_torrents_for_cleaning)
+    return len(starting_torrents_for_cleaning) - len(torrents_for_cleaning)
 
 
 def torrents_missing_data(torrents: [TorrentAccessorObject]):
@@ -191,6 +212,10 @@ def torrents_unregistered(torrents: [TorrentAccessorObject]):
     torrents_filter =  filter(lambda torrent: \
         torrent.error_string == "Unregistered torrent" \
             , torrents)
+    return list(torrents_filter)
+
+def torrents_with_errors(torrents: [TorrentAccessorObject]):
+    torrents_filter =  filter(lambda torrent: torrent.error != 0, torrents)
     return list(torrents_filter)
 
 
@@ -224,9 +249,11 @@ def main(address="http://localhost:9091/transmission/rpc",
 
     torrents = get_torrents(client)
     if len(torrents) > 0:
-        clean_torrents_with_temp_errors(client, torrents, test=test, force= False)
-        clean_torrents_missing_data(client, torrents, test=test)
-        clean_torrents_unregistered(client, torrents, test=test)
+        temp_errors_cleaned  = clean_torrents_with_temp_errors(client, torrents, test=test, force= False)
+        missing_data_cleaned = clean_torrents_missing_data(client, torrents, test=test)
+        unregistered_cleaned = clean_torrents_unregistered(client, torrents, test=test)
+        print("Cleaned",temp_errors_cleaned, "temp errors", missing_data_cleaned, "missing data", unregistered_cleaned,"unregistered", \
+            "from total of" ,len(torrents_with_errors(torrents)) , "errors across", len(torrents),"torrents")
 
    
 parser = argparse.ArgumentParser(description='Transmission Cleaner - Automaticly remedy those torrent errors!')
