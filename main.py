@@ -66,6 +66,10 @@ def start_torrent(client, torrent, test=True, force_start = True):
     return(0)
 
 def re_add_torrent(client, torrent, test=True):
+    add_torrent_arguments: TorrentAddArguments = {
+        "filename": torrent.magnet_link,
+        "paused": True,
+    }
     if test:
         print_torrent_message("Test mode. Re-add running without remove", torrent, include_torrent_error = True)
         remove_response = None
@@ -73,17 +77,13 @@ def re_add_torrent(client, torrent, test=True):
         print_torrent_message("Removing ",torrent, include_torrent_error = True)
         remove_response = client.torrent.remove(ids = torrent.id, delete_local_data = False, include_magnet_link = True)
         print(remove_response)
-    
-    add_torrent_arguments: TorrentAddArguments = {
-        "filename": torrent.magnet_link,
-        "paused": True,
-    }
-    print_torrent_message("Adding ",torrent, include_torrent_error = False, include_magnet_link = True)
-    add_response = client.torrent.add(add_torrent_arguments)
-    print(add_response)
+
+        print_torrent_message("Adding ",torrent, include_torrent_error = False, include_magnet_link = True)
+        add_response = client.torrent.add(add_torrent_arguments)
+        print(add_response)
         
-    if add_response.result == 'success' :
-        return(1)
+        if add_response.result == 'success' :
+            return(1)
     return(0)
 
 def get_torrents(client, fields = None, ids: IdsArg = None):
