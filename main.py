@@ -44,8 +44,8 @@ def remove_torrent(client, torrent, delete_local_data=True, test=True):
         remove_response = client.torrent.remove(torrent.id, delete_local_data=delete_local_data)
         print(remove_response)
         if remove_response.result == 'success':
-            return(1)
-    return(0)
+            return(torrent.id)
+
 
 
 def start_torrent(client, torrent, test=True, force_start = True):
@@ -62,8 +62,8 @@ def start_torrent(client, torrent, test=True, force_start = True):
         start_response = client.torrent.action(action_method, ids = torrent.id)
         print(start_response)
         if start_response.result == 'success':
-            return(1)
-    return(0)
+            return(torrent.id)
+
 
 def re_add_torrent(client, torrent, test=True):
     add_torrent_arguments: TorrentAddArguments = {
@@ -71,11 +71,11 @@ def re_add_torrent(client, torrent, test=True):
         "paused": True,
     }
     if test:
-        print_torrent_message("Test mode. Re-add running without remove", torrent, include_torrent_error = True)
+        print_torrent_message("Test mode. Re-add running without remove", torrent, include_torrent_error = True, include_magnet_link = True)
         remove_response = None
     else:
-        print_torrent_message("Removing ",torrent, include_torrent_error = True)
-        remove_response = client.torrent.remove(ids = torrent.id, delete_local_data = False, include_magnet_link = True)
+        print_torrent_message("Removing ",torrent, include_torrent_error = True, include_magnet_link = True)
+        remove_response = client.torrent.remove(ids = torrent.id, delete_local_data = False)
         print(remove_response)
 
         print_torrent_message("Adding ",torrent, include_torrent_error = False, include_magnet_link = True)
@@ -83,8 +83,8 @@ def re_add_torrent(client, torrent, test=True):
         print(add_response)
         
         if add_response.result == 'success' :
-            return(1)
-    return(0)
+            return(torrent.id)
+
 
 def get_torrents(client, fields = None, ids: IdsArg = None):
     if fields == None:
@@ -175,10 +175,9 @@ def clean_torrents(client,torrents: [TorrentAccessorObject], clean_function, tes
 
     for torrent in torrents:
         print("-------------------------------------------------------------- ")
-        ids.append(torrent.id)
         clean_attempts = clean_attempts + 1
-        cleaned = cleaned + clean_function(client, torrent, test = test)
-    print('Cleaned:',cleaned, '/', clean_attempts )
+        ids.append(clean_function(client, torrent, test = test))
+    print('Cleaned:',len(ids), '/', clean_attempts )
     return(ids)
 
 def clean_torrents_missing_data(client,torrents: [TorrentAccessorObject], test=True, torrent_filter_function = torrents_missing_data):
