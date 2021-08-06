@@ -242,7 +242,11 @@ def main(address="http://localhost:9091/transmission/rpc",
         username=None,
         password=None,
         debug=False,
-        test=True):
+        test=True,
+        clean_unregisted=True,
+        clean_missing_data=True,
+        clean_io=True,
+        clean_io_force=False):
 
     if test:
         print("running in test mode!")
@@ -258,10 +262,19 @@ def main(address="http://localhost:9091/transmission/rpc",
         debug=debug)
 
     torrents = get_torrents(client)
+    temp_errors_cleaned = 0
+    missing_data_cleaned = 0
+    unregistered_cleaned= 0
+    
     if len(torrents) > 0:
-        temp_errors_cleaned  = clean_torrents_with_temp_errors(client, torrents, test=test, force= False)
-        missing_data_cleaned = clean_torrents_missing_data(client, torrents, test=test)
-        unregistered_cleaned = clean_torrents_unregistered(client, torrents, test=test)
+        if clean_io_force or clean_io:
+            temp_errors_cleaned  = clean_torrents_with_temp_errors(client, torrents, test=test, force= clean_io_force)
+
+        if clean_missing_data:
+            missing_data_cleaned = clean_torrents_missing_data(client, torrents, test=test)
+
+        if clean_unregisted:
+            unregistered_cleaned = clean_torrents_unregistered(client, torrents, test=test)
         print("Cleaned",temp_errors_cleaned, "temp errors", missing_data_cleaned, "missing data", unregistered_cleaned,"unregistered", \
             "from total of" ,len(torrents_with_errors(torrents)) , "errors across", len(torrents),"torrents")
 
@@ -278,6 +291,10 @@ parser.add_argument("--username", default=None, type=str, help="Transmission con
 parser.add_argument("--password", default=None, type=str, help="Transmission connection password.")
 parser.add_argument("--debug", default=False, help="Transmission connection debug flag.", action='store_true')
 parser.add_argument("--test", default=False, help="Run cleaner in test mode. Print actions console instead of doing them.", action='store_true')
+parser.add_argument("--unregistered", default=False, help="Clean unregistered torrents by removal.", action='store_true')
+parser.add_argument("--missing_data", default=False, help="Clean torrents with missing data by removal and readdition.", action='store_true')
+parser.add_argument("--io", default=False, help="Clean torrents with io problems by force starting.", action='store_true')
+parser.add_argument("--io_force", default=False, help="Clean torrents with io problems by attempting force state, then removal and readdition if not successful.", action='store_true')
 
 #group = parser.add_mutually_exclusive_group(required=True)
 #group.add_argument('--address', action='store_true', help="This is the 'address' variable")
@@ -286,4 +303,5 @@ parser.add_argument("--test", default=False, help="Run cleaner in test mode. Pri
 args = parser.parse_args()
 print(args)
 main(address=args.address, scheme=args.scheme, host=args.host, port=args.port, path=args.path, \
-    query=args.query, username=args.username, password=args.password, debug=args.debug, test = args.test)
+    query=args.query, username=args.username, password=args.password, debug=args.debug, test = args.test \
+        ,clean_unregisted=args.unregistered, clean_missing_data=args.missing_data, clean_io=args.io, clean_io_force=args.io_force)
