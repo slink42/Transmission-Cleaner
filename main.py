@@ -145,20 +145,28 @@ def compare_torrent_list(torrents_a, torrents_b, attribue = 'name',match_type = 
 
 def torrents_missing_data(torrents: [TorrentAccessorObject]):
     torrents_filter =  filter(lambda torrent: \
-        torrent.error_string == 'No data found! Ensure your drives are connected or use "Set Location". To re-download, remove the torrent and re-add it.' \
+        torrent.error_string == 'No data found! Ensure your drives are connected or use "Set Location". To re-download, remove the torrent and re-add it.' or \
+            torrent.error_string.startswith("Illegal seek") \
             , torrents)
     return list(torrents_filter)
 
 def torrents_unregistered(torrents: [TorrentAccessorObject]):
     torrents_filter =  filter(lambda torrent: \
-        torrent.error_string == "Unregistered torrent" \
-            , torrents)
+        torrent.error_string == "Unregistered torrent", torrents)
+    return list(torrents_filter)
+
+def torrents_invalid_passkey(torrents: [TorrentAccessorObject]):
+    torrents_filter =  filter(lambda torrent: \
+        torrent.error_string != "Passkey not found", torrents)
     return list(torrents_filter)
 
 def torrents_with_errors(torrents: [TorrentAccessorObject]):
     torrents_filter =  filter(lambda torrent: torrent.error != 0, torrents)
     return list(torrents_filter)
 
+def torrents_with_data(torrents: [TorrentAccessorObject], threshold = 0.01):
+    torrents_filter =  filter(lambda torrent: torrent.percent_done > threshold, torrents)
+    return list(torrents_filter)
 
 def torrents_with_temp_errors(torrents: [TorrentAccessorObject]):
     torrents_filter =  filter(lambda torrent: \
@@ -180,7 +188,7 @@ def clean_torrents(client,torrents: [TorrentAccessorObject], clean_function, tes
     print('Cleaned:',len(ids), '/', clean_attempts )
     return(ids)
 
-def clean_torrents_missing_data(client,torrents: [TorrentAccessorObject], test=True, torrent_filter_function = torrents_missing_data):
+def clean_torrents_missing_data(client,torrents: [TorrentAccessorObject], test=True, retries = 2, torrent_filter_function = torrents_missing_data):
     torrents_for_cleaning = torrent_filter_function(torrents)
     if len(torrents_for_cleaning) == 0:
         print('No torrents missing data to clean')
@@ -191,7 +199,7 @@ def clean_torrents_missing_data(client,torrents: [TorrentAccessorObject], test=T
         #torrents_post_clean = get_torrents(client)
         #compare_torrent_list(torrents_for_cleaning, torrents_post_clean, attribue = 'name',match_type = 'equals')
         #return len(ids)
-        return clean_torrents_with_temp_errors(client, torrents, test=test, force= True, torrent_filter_function = torrents_missing_data)
+        return clean_torrents_with_temp_errors(client, torrents, test=test, force= True, retries = retries, torrent_filter_function = torrents_missing_data)
         
 
 def clean_torrents_unregistered(client,torrents: [TorrentAccessorObject], test=True, torrent_filter_function = torrents_unregistered):
@@ -210,6 +218,7 @@ def clean_torrents_with_temp_errors(client,torrents: [TorrentAccessorObject], te
     attempt = 0
     max_attempts = retries + 1
     torrents_for_cleaning = torrent_filter_function(torrents)
+
     starting_torrents_for_cleaning = torrents_for_cleaning
 
     if len(torrents_for_cleaning) == 0:
@@ -243,10 +252,14 @@ def main(address="http://localhost:9091/transmission/rpc",
         password=None,
         debug=False,
         test=True,
+        max_checked=None,
         clean_unregisted=True,
         clean_missing_data=True,
         clean_io=True,
-        clean_io_force=False):
+        clean_io_force=False,
+        clean_passkey=False,
+        threshold=0.03,
+        retries = 2):
 
     if test:
         print("running in test mode!")
@@ -261,40 +274,62 @@ def main(address="http://localhost:9091/transmission/rpc",
         password=password,
         debug=debug)
 
-    torrents = get_torrents(client)
+    torrents_all = get_torrents(client)
     temp_errors_cleaned = 0
     missing_data_cleaned = 0
     unregistered_cleaned= 0
-    
+
+    if threshold != None:
+        torrents = torrents_with_data(torrents_all, threshold = threshold)
+    else:
+        torrents = torrents_all
+
+    print("torrents:", len(torrents_all), "torrents checked", len(torrents), "torrents with errors:", len(torrents_with_errors(torrents)))
+
     if len(torrents) > 0:
+        error_torrents = torrents_with_errors(torrents)
+
+        if max_checked != None:
+            error_torrents = error_torrents[0:min(len(error_torrents),max_checked)]
+
         if clean_io_force or clean_io:
-            temp_errors_cleaned  = clean_torrents_with_temp_errors(client, torrents, test=test, force= clean_io_force)
+            temp_errors_cleaned  = clean_torrents_with_temp_errors(client, error_torrents, retries=retries, test=test, force=clean_io_force)
 
         if clean_missing_data:
-            missing_data_cleaned = clean_torrents_missing_data(client, torrents, test=test)
+            missing_data_cleaned = clean_torrents_missing_data(client, error_torrents,  retries=retries, test=test)
 
         if clean_unregisted:
-            unregistered_cleaned = clean_torrents_unregistered(client, torrents, test=test)
-        print("Cleaned",temp_errors_cleaned, "temp errors", missing_data_cleaned, "missing data", unregistered_cleaned,"unregistered", \
-            "from total of" ,len(torrents_with_errors(torrents)) , "errors across", len(torrents),"torrents")
+            unregistered_cleaned = clean_torrents_unregistered(client, error_torrents, test=test)
 
-   
+        print("Cleaned",temp_errors_cleaned, "temp errors", missing_data_cleaned, "missing data", \
+            unregistered_cleaned,"unregistered", \
+                "from",len(error_torrents), "errors checked", \
+                "(",len(torrents_invalid_passkey(error_torrents)), "invalid key errors)", \
+                "(" ,len(torrents_with_errors(torrents_all)) , "errors total) ", \
+                " across", len(torrents),"torrents")
+
 parser = argparse.ArgumentParser(description='Transmission Cleaner - Automaticly remedy those torrent errors!')
 
-parser.add_argument("--address", default="http://localhost:9091/transmission/rpc", type=str, help="Full URL path to transmission. eg. http://localhost:9091/transmission/rpc")
-parser.add_argument("--scheme", default=None, type=str, help="Transmission connection schema. eg. http")
-parser.add_argument("--host", default=None, type=str, help="Transmission connection host. eg. localhost")
-parser.add_argument("--port", default=None, type=str, help="Transmission connection port. eg. 9091")
-parser.add_argument("--path", default=None, type=str, help="Transmission connection host. eg. /transmission/rpc")
-parser.add_argument("--query", default=None, type=str, help="Transmission connection query.")
-parser.add_argument("--username", default=None, type=str, help="Transmission connection username.")
-parser.add_argument("--password", default=None, type=str, help="Transmission connection password.")
-parser.add_argument("--debug", default=False, help="Transmission connection debug flag.", action='store_true')
-parser.add_argument("--test", default=False, help="Run cleaner in test mode. Print actions console instead of doing them.", action='store_true')
+parser.add_argument("--address",      default="http://localhost:9091/transmission/rpc", type=str, help="Full URL path to transmission. eg. http://localhost:9091/transmission/rpc")
+parser.add_argument("--scheme",       default=None, type=str, help="Transmission connection schema. eg. http")
+parser.add_argument("--host",         default=None, type=str, help="Transmission connection host. eg. localhost")
+parser.add_argument("--port",         default=None, type=str, help="Transmission connection port. eg. 9091")
+parser.add_argument("--path",         default=None, type=str, help="Transmission connection host. eg. /transmission/rpc")
+parser.add_argument("--query",        default=None, type=str, help="Transmission connection query.")
+parser.add_argument("--username",     default=None, type=str, help="Transmission connection username.")
+parser.add_argument("--password",     default=None, type=str, help="Transmission connection password.")
+parser.add_argument("--debug",        default=False, help="Transmission connection debug flag.", action='store_true')
+parser.add_argument("--test",         default=False, help="Run cleaner in test mode. Print actions console instead of doing them.", action='store_true')
 parser.add_argument("--unregistered", default=False, help="Clean unregistered torrents by removal.", action='store_true')
 parser.add_argument("--missing_data", default=False, help="Clean torrents with missing data by removal and readdition.", action='store_true')
-parser.add_argument("--io", default=False, help="Clean torrents with io problems by force starting.", action='store_true')
-parser.add_argument("--io_force", default=False, help="Clean torrents with io problems by attempting force state, then removal and readdition if not successful.", action='store_true')
+parser.add_argument("--io",           default=False, help="Clean torrents with io problems by force starting.", action='store_true')
+parser.add_argument("--io_force",     default=False, help="Clean torrents with io problems by attempting force state, then removal and readdition if not successful.", action='store_true')
+parser.add_argument("--clean_passkey",default=False, help="Clean torrents with passkey errors.", action='store_true')
+parser.add_argument("--max_checked",  default=None,  type=float, help="Set a maximum number of torrents with error status to check for cleaning.")
+parser.add_argument("--threshold",    default=None,  type=float, help="% Completion threshold to use for determining torrents which have started. 0.01 = 1%")
+parser.add_argument("--retries",      default=2,  type=float, help="Force start retries")
+
+
 
 #group = parser.add_mutually_exclusive_group(required=True)
 #group.add_argument('--address', action='store_true', help="This is the 'address' variable")
@@ -304,4 +339,6 @@ args = parser.parse_args()
 print(args)
 main(address=args.address, scheme=args.scheme, host=args.host, port=args.port, path=args.path, \
     query=args.query, username=args.username, password=args.password, debug=args.debug, test = args.test \
-        ,clean_unregisted=args.unregistered, clean_missing_data=args.missing_data, clean_io=args.io, clean_io_force=args.io_force)
+        ,clean_unregisted=args.unregistered, clean_missing_data=args.missing_data, clean_io=args.io, clean_io_force=args.io_force, clean_passkey=args.clean_passkey\
+        ,max_checked=args.max_checked, threshold=args.threshold, retries=args.retries)
+
